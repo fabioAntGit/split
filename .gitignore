@@ -1,0 +1,5 @@
+# Build products and test output (Tests/run.sh writes build/test-run)
+build/
+
+# macOS
+.DS_Store
