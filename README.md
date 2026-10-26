@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="imagem.png" alt="Split" width="220" />
+</p>
+
 # Split
 
 A file converter and editor for the macOS menu bar. Start dragging files, tap a key, and drop them on a wheel of conversions and tools. Split uses open-source engines and the frameworks built into macOS. There are no accounts, limits or online services: everything happens on your Mac.
