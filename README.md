@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="imagem.png" alt="Split" width="220" />
+  <img src="logo.png" alt="Split" width="220" />
 </p>
 
 # Split
