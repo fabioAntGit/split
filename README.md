@@ -5,7 +5,7 @@
 
 # Split
 
-A file converter and editor for the macOS menu bar. Start dragging files, tap a key, and drop them on a wheel of conversions and tools. Split uses open-source engines and the frameworks built into macOS. There are no accounts, limits or online services: everything happens on your Mac.
+Drag files, tap a key, drop them on a wheel of conversions and tools. A private, offline file converter and editor for the macOS menu bar.
 
 <p align="center">
   <img src="preview/Split-preview.gif" alt="Split app preview" width="800" />
