@@ -74,6 +74,18 @@ enum FileAction: String, CaseIterable {
         }
     }
 
+    /// What it does, for Settings. Every action takes any file.
+    var explanation: String {
+        switch self {
+        case .sendAirDrop: return L("Sends the files to an iPhone, iPad or Mac nearby.")
+        case .shelf: return L("Keeps the files in a small floating window, to drag them somewhere later.")
+        case .copy: return L("Puts the files on the clipboard, to paste them in Finder or in another app.")
+        case .copyPaths: return L("Copies where the files are, as text, for Terminal or a message.")
+        case .move: return L("Moves the files to a folder chosen in a panel.")
+        case .terminal: return L("Opens Terminal in the folder the files are in.")
+        }
+    }
+
     func perform(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         switch self {

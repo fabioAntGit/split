@@ -391,9 +391,7 @@ enum Explain {
         let formats = urls.compactMap(Format.detect)
         let groups = Set(formats.map(\.group))
         if groups.count > 1 {
-            let list = ListFormatter()
-            list.locale = Localizer.shared.locale
-            let names = list.string(from: groups.map(groupName).sorted()) ?? ""
+            let names = listed(groups.map(groupName).sorted())
             return Problem(tools ? L("The files are of different kinds (%@) and no tool works for all of them.", names)
                                  : L("The files are of different kinds (%@) and no format works for all of them.", names),
                            suggestion: L("Drag files of one kind at a time."))

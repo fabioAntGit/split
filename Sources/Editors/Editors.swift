@@ -41,6 +41,19 @@ enum EditorTool: String, CaseIterable {
         }
     }
 
+    /// What it does and which files it takes, for Settings.
+    var explanation: String {
+        switch self {
+        case .crop: return L("Crop, straighten, rotate or flip pictures, several at once. For images.")
+        case .annotate: return L("Draw arrows, shapes and text, or blur and cover what shouldn’t be seen. For up to 4 images.")
+        case .adjust: return L("Change light, colour and sharpness, or apply a filter. For images.")
+        case .background: return L("Put a picture on a coloured background or in a frame, with rounded corners and a shadow. For images.")
+        case .collage: return L("Arrange several pictures into one image. For 2 to 30 images.")
+        case .media: return L("Trim, change the speed and volume, fade, crop or cover parts of a video or a sound. For audio and video.")
+        case .pdfPages: return L("Reorder, rotate, duplicate, delete and insert pages, or save some apart. For PDFs.")
+        }
+    }
+
     func applies(to urls: [URL]) -> Bool {
         let formats = urls.compactMap(Format.detect)
         guard formats.count == urls.count, !formats.isEmpty else { return false }

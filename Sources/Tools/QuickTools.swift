@@ -75,6 +75,28 @@ enum QuickTool: String, CaseIterable {
         }
     }
 
+    /// What it does and which files it takes, for Settings.
+    var explanation: String {
+        switch self {
+        case .compress: return L("Makes a lighter copy that still looks and sounds good. For images, PDFs, audio and video.")
+        case .compressToSize: return L("Asks for the largest size, such as 2 MB, and makes a copy that fits. For images, audio and video.")
+        case .stripMetadata: return L("Removes the location, camera, dates and other hidden details before sharing. For images, PDFs, audio and video.")
+        case .removeBackground: return L("Cuts out the subject and saves it as a PNG with transparency. For images.")
+        case .combinePDF: return L("Joins PDFs and pictures into one PDF, in the order they were chosen. For PDFs and images.")
+        case .splitPages: return L("Saves each page of a PDF as a PDF of its own. For PDFs.")
+        case .extract: return L("Unpacks an archive into a folder next to it. For ZIP, RAR, 7z and TAR.")
+        case .zip: return L("Compresses files and folders into one ZIP. For anything.")
+        case .normalize: return L("Brings the volume to the same comfortable level from start to end. For audio and video.")
+        case .mono: return L("Mixes the sound into a single channel. For audio and video.")
+        case .trimSilence: return L("Cuts the silence at the start and at the end. For audio.")
+        case .mute: return L("Keeps the picture and takes the sound out. For video.")
+        case .concatVideos: return L("Joins several videos into one, one after the other. For 2 or more videos.")
+        case .snapshots: return L("Saves 12 pictures spread evenly through the video. For video.")
+        case .waveformVideo: return L("Turns a sound into an MP4 with a moving waveform, ready to post. For audio.")
+        case .readQR: return L("Finds the QR codes in a picture and copies their text. For images and PDFs.")
+        }
+    }
+
     /// Batch tools produce one result from all files; the rest run per file.
     var isBatch: Bool { [.combinePDF, .zip, .concatVideos].contains(self) }
 

@@ -118,3 +118,10 @@ func fill(_ format: String, _ arguments: [Any]) -> String {
     let values: [CVarArg] = arguments.map { "\($0)" as NSString }
     return String(format: format, locale: Localizer.shared.locale, arguments: values)
 }
+
+/// "A, B and C" in the current language.
+func listed(_ items: [String]) -> String {
+    let formatter = ListFormatter()
+    formatter.locale = Localizer.shared.locale
+    return formatter.string(from: items) ?? items.joined(separator: ", ")
+}

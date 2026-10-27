@@ -30,6 +30,22 @@ enum Conversions {
         return common
     }
 
+    /// The free program a conversion still waits for, when it isn't installed. These conversions
+    /// are offered anyway, and choosing one says what to install.
+    static func missingProgram(from source: Format, to target: Format) -> String? {
+        let program: String
+        if [.audio, .video].contains(source.group) || (source == .gif && [.mp4, .webm].contains(target)) {
+            program = "ffmpeg"
+        } else if target == .webp {
+            program = "cwebp"
+        } else if target == .jxl {
+            program = "cjxl"
+        } else {
+            return nil
+        }
+        return Engines.path(program) == nil ? program : nil
+    }
+
     static func convert(_ url: URL, to target: Format) throws -> [URL] {
         try FileCheck.preflight(url)
         guard let source = Format.detect(url) else { throw Explain.noTargets([url], tools: false) }
