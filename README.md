@@ -1,3 +1,4 @@
+
 <p align="center">
   <img src="logo.png" alt="Split" width="220" />
 </p>
@@ -5,6 +6,10 @@
 # Split
 
 A file converter and editor for the macOS menu bar. Start dragging files, tap a key, and drop them on a wheel of conversions and tools. Split uses open-source engines and the frameworks built into macOS. There are no accounts, limits or online services: everything happens on your Mac.
+
+<p align="center">
+  <img src="preview/Split-preview.gif" alt="Split app preview" width="800" />
+</p>
 
 ## Requirements
 
@@ -22,6 +27,7 @@ A file converter and editor for the macOS menu bar. Start dragging files, tap a 
    ```
 
    There's no need to reopen Split afterwards. Everything else uses macOS itself.
+
 4. Optional: **Settings › Engines › Terminal** gives the command that links `splitapp` to the app, so it works in Terminal.
 
 ## Use
@@ -79,8 +85,8 @@ Compress (image, video, audio and PDF) or compress to a target size, remove meta
 
 | From | To | Engine |
 |---|---|---|
-| JPG PNG WebP JPEG XL HEIC AVIF TIFF BMP GIF ICO SVG | JPG PNG WebP JPEG XL HEIC AVIF TIFF BMP GIF ICO PDF (GIF also to MP4/WebM) | ImageIO, cwebp, gif2webp, cjxl |
-| MP3 M4A WAV FLAC OGG Opus AIFF WMA | the same | ffmpeg |
+| JPG PNG WebP JPEG XL HEIC AVIF TIFF BMP GIF ICO SVG | JPG PNG WebP JPEG XL AVIF TIFF BMP GIF ICO PDF (GIF also to MP4/WebM) | ImageIO, cwebp, gif2webp, cjxl |
+| MP3 M4A WAV FLAC OGG Opus AIFF WMA | The same | ffmpeg |
 | MP4 MOV M4V MKV WebM AVI WMV | MP4 MOV MKV WebM AVI WMV GIF and every audio format | ffmpeg (without re-encoding when possible) |
 | DOCX DOC ODT RTF RTFD TXT HTML Markdown EPUB | PDF DOCX ODT RTF TXT HTML EPUB Pages | Cocoa, Word (optional), Split's own EPUB and Markdown, Pages |
 | PDF | PNG JPG TXT DOCX RTF HTML EPUB | PDFKit, with OCR (Vision) for scans |
