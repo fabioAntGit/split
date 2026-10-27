@@ -392,7 +392,7 @@ struct AnnotateScreen: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(VisualEffect(material: .headerView, blending: .withinWindow))
+        .background(Color.black.opacity(0.18))
     }
 
     /// The marks plus the one being drawn.

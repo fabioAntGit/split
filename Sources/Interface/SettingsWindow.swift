@@ -30,7 +30,7 @@ enum ModifierChoice {
 }
 
 enum SettingsTab: String {
-    case general, activity, shortcuts, wheels, engines
+    case general, activity, shortcuts, wheels, formats, engines
 }
 
 /// Which tab is showing, so the menu and the HUD can open Settings straight on Activity.
@@ -45,16 +45,20 @@ struct SettingsView: View {
     @ObservedObject var navigation = SettingsNavigation.shared
     @ObservedObject var log = ActivityLog.shared
 
+    /// Room for the wheel preview next to its list, and for the formats beside their details.
+    static let size = NSSize(width: 760, height: 660)
+
     var body: some View {
         TabView(selection: $navigation.tab) {
             GeneralSettings().tabItem { Label(L("General"), systemImage: "gearshape") }.tag(SettingsTab.general)
             ActivityView().tabItem { Label(activityTitle, systemImage: "list.bullet.rectangle") }.tag(SettingsTab.activity)
             ShortcutSettings().tabItem { Label(L("Shortcuts"), systemImage: "keyboard") }.tag(SettingsTab.shortcuts)
             WheelSettings().tabItem { Label(L("Wheels"), systemImage: "chart.pie") }.tag(SettingsTab.wheels)
+            FormatSettings().tabItem { Label(L("Formats"), systemImage: "arrow.left.arrow.right") }.tag(SettingsTab.formats)
             EngineSettings().tabItem { Label(L("Engines"), systemImage: "cpu") }.tag(SettingsTab.engines)
         }
         .padding(.top, 8)
-        .frame(width: 600, height: 600)
+        .frame(width: SettingsView.size.width, height: SettingsView.size.height)
         // A new language rebuilds every view, so no text is left in the old one.
         .id(localizer.language)
     }
@@ -86,21 +90,6 @@ struct GeneralSettings: View {
                 Text(L("Language"))
             } footer: {
                 Text(L("Panels drawn by macOS, such as Open and Save, change the next time Split opens.")).footnote()
-            }
-            Section {
-                HStack(spacing: 18) {
-                    BackdropCard(title: L("Black"), glass: false, selected: !look.glassWheel) {
-                        withAnimation(Motion.standard) { look.glassWheel = false }
-                    }
-                    BackdropCard(title: L("Glass"), glass: true, selected: look.glassWheel) {
-                        withAnimation(Motion.standard) { look.glassWheel = true }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            } header: {
-                Text(L("Wheel Background"))
-            } footer: {
-                Text(L("Glass lets what is behind show through, like macOS menus. With “Reduce transparency” on in the Accessibility settings, the wheel stays black.")).footnote()
             }
             Section {
                 Picker(L("Quality"), selection: $quality) {
@@ -288,71 +277,6 @@ struct CommandRow: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .controlSize(.small)
-        }
-    }
-}
-
-/// A miniature wheel on each backdrop, like the appearance previews in System Settings.
-struct BackdropCard: View {
-    let title: String
-    let glass: Bool
-    let selected: Bool
-    let action: () -> Void
-    @ObservedObject var look = LookStore.shared
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                WheelPreview(glass: glass)
-                    .frame(width: 150, height: 96)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(
-                        LinearGradient(colors: [Color(white: 0.32), Color(white: 0.16)], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                    .padding(3)
-                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(selected ? look.accent : .clear, lineWidth: 3))
-                Text(title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-struct WheelPreview: View {
-    let glass: Bool
-
-    var body: some View {
-        Canvas { context, size in
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let outer = min(size.width, size.height) / 2 - 6
-            let inner = outer * 0.36
-            let disc = Path(ellipseIn: CGRect(x: center.x - outer, y: center.y - outer, width: outer * 2, height: outer * 2))
-            if glass {
-                context.fill(disc, with: .linearGradient(Gradient(colors: [Color.white.opacity(0.34), Color.white.opacity(0.12)]),
-                                                         startPoint: CGPoint(x: center.x - outer, y: center.y - outer),
-                                                         endPoint: CGPoint(x: center.x + outer, y: center.y + outer)))
-                context.stroke(disc, with: .color(Color.white.opacity(0.55)), lineWidth: 0.75)
-            } else {
-                context.fill(disc, with: .color(Color(nsColor: Palette.wheelSurface)))
-                context.stroke(disc, with: .color(Color.white.opacity(0.14)), lineWidth: 0.5)
-            }
-            let count = 8
-            for index in 0..<count {
-                let start = Angle.degrees(Double(index) * 360 / Double(count) - 90)
-                let end = Angle.degrees(Double(index + 1) * 360 / Double(count) - 90)
-                var segment = Path()
-                segment.addArc(center: center, radius: outer - 3, startAngle: start + .degrees(2), endAngle: end - .degrees(2), clockwise: false)
-                segment.addArc(center: center, radius: inner + 3, startAngle: end - .degrees(4), endAngle: start + .degrees(4), clockwise: true)
-                segment.closeSubpath()
-                if index == 1 {
-                    context.fill(segment, with: .color(Color(nsColor: Palette.selection)))
-                } else {
-                    context.stroke(segment, with: .color(Color.white.opacity(0.14)), lineWidth: 0.5)
-                }
-            }
-            context.fill(Path(ellipseIn: CGRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2)),
-                         with: .color(Color.white.opacity(0.08)))
         }
     }
 }

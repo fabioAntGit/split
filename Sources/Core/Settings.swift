@@ -63,6 +63,19 @@ enum WheelSize: Int, CaseIterable {
     }
 }
 
+/// The colour of the wheel, the editors and every other window: a soft black, or white. Glass,
+/// when it is on, takes on this colour.
+enum LookColor: String, CaseIterable {
+    case black, white
+
+    var label: String {
+        switch self {
+        case .black: return L("Black")
+        case .white: return L("White")
+        }
+    }
+}
+
 enum Settings {
     private static let defaults = UserDefaults.standard
 
@@ -89,10 +102,22 @@ enum Settings {
         }
     }
 
+    /// Black until the user picks white, as Split has always looked.
+    static var lookColor: LookColor {
+        get { LookColor(rawValue: defaults.string(forKey: "lookColor") ?? "") ?? .black }
+        set { defaults.set(newValue.rawValue, forKey: "lookColor") }
+    }
+
     /// Liquid Glass behind the wheel (macOS 26), or the closest material before that.
     static var glassWheel: Bool {
         get { defaults.bool(forKey: "glassWheel") }
         set { defaults.set(newValue, forKey: "glassWheel") }
+    }
+
+    /// How strongly the glass takes on the colour, from 0 (clear) to 1 (nearly solid).
+    static var glassIntensity: Double {
+        get { min(1, max(0, defaults.object(forKey: "glassIntensity") as? Double ?? 0.25)) }
+        set { defaults.set(min(1, max(0, newValue)), forKey: "glassIntensity") }
     }
 
     static var wheelSize: WheelSize {

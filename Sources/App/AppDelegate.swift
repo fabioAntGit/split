@@ -6,13 +6,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let dragMonitor = DragMonitor()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        LookStore.applyAppearance()
+        LookStore.applyColor()
         MainMenu.install(target: self, settings: #selector(showSettingsAction), about: #selector(openAboutPanel))
 
         menuBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let icon = NSImage(systemSymbolName: "circle.hexagongrid.circle", accessibilityDescription: "Split")
-        icon?.isTemplate = true
-        menuBarItem.button?.image = icon
+        menuBarItem.button?.image = Logo.menuBarImage()
         menuBarItem.button?.toolTip = "Split"
         let menu = NSMenu()
         menu.delegate = self
@@ -120,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func showSettings(tab: SettingsTab? = nil) {
         if let tab { SettingsNavigation.shared.tab = tab }
-        Windows.shared.show(title: L("Split Settings"), size: NSSize(width: 600, height: 600), minSize: NSSize(width: 600, height: 600),
+        Windows.shared.show(title: L("Split Settings"), size: SettingsView.size, minSize: SettingsView.size,
                             id: "settings", resizable: false, content: SettingsView())
     }
 

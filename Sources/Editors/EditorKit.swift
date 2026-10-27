@@ -32,16 +32,26 @@ final class Windows: NSObject, NSWindowDelegate {
         }
         var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
         if resizable { style.insert(.resizable) }
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: style, backing: .buffered, defer: false)
+        let frame = NSRect(origin: .zero, size: size)
+        let window: NSWindow
+        if host != nil {
+            // Editors wear the wheel's look, its colour or glass, from edge to edge.
+            style.insert(.fullSizeContentView)
+            let hosting = NSHostingView(rootView: content.themed())
+            hosting.sizingOptions = []
+            window = LookWindow(content: hosting, contentRect: frame, styleMask: style)
+        } else {
+            window = NSWindow(contentRect: frame, styleMask: style, backing: .buffered, defer: false)
+            let hosting = NSHostingController(rootView: content.themed())
+            hosting.sizingOptions = []
+            window.contentViewController = hosting
+        }
         window.title = title
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentMinSize = minSize
         window.tabbingMode = .disallowed
         if let id { window.identifier = NSUserInterfaceItemIdentifier(id) }
-        let hosting = NSHostingController(rootView: content.themed())
-        hosting.sizingOptions = []
-        window.contentViewController = hosting
         window.setContentSize(size)
         window.center()
         if let host {
@@ -86,6 +96,98 @@ final class Windows: NSObject, NSWindowDelegate {
             }
         }
     }
+}
+
+/// An editor's window in the wheel's look: its colour, black or white, or glass tinted with it
+/// that lets the desktop show through. It follows Settings while it is open.
+final class LookWindow: NSWindow {
+    private let content: NSView
+    private var observer: NSObjectProtocol?
+
+    init(content: NSView, contentRect: NSRect, styleMask: NSWindow.StyleMask) {
+        self.content = content
+        super.init(contentRect: contentRect, styleMask: styleMask, backing: .buffered, defer: false)
+        titlebarAppearsTransparent = true
+        contentView = content
+        dress()
+        observer = NotificationCenter.default.addObserver(forName: LookStore.didChange, object: nil, queue: nil) { [weak self] _ in
+            if Thread.isMainThread {
+                self?.dress()
+            } else {
+                DispatchQueue.main.async { self?.dress() }
+            }
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    var isGlass: Bool { Settings.glassWheel && !Motion.reduceTransparency }
+
+    /// With glass, the glass is the window's content view and holds the editor. Nested any deeper,
+    /// it takes in the title bar's buttons and title as well, and smears them.
+    private func dress() {
+        let glass = isGlass
+        appearance = Palette.wheelAppearance
+        isOpaque = !glass
+        backgroundColor = glass ? .clear : Palette.wheelSurface
+        let backdrop = contentView === content ? nil : contentView
+        switch (glass, backdrop) {
+        case (true, let backdrop?):
+            WheelBackdrop.tint(backdrop)
+        case (true, nil):
+            let backdrop = EditorBackdrop.make(frame: content.frame)
+            contentView = backdrop
+            EditorBackdrop.hold(content, in: backdrop)
+        case (false, let backdrop?):
+            EditorBackdrop.release(content, from: backdrop)
+            contentView = content
+        case (false, nil):
+            break
+        }
+    }
+}
+
+/// The editors' glass: the regular kind, more frosted than the wheel's clear one, since a window
+/// is a place to work and its text and controls need a calmer ground than a wheel that is open
+/// for a second. The editor goes inside the glass, as glass expects.
+enum EditorBackdrop {
+    private static let setContentView = NSSelectorFromString("setContentView:")
+
+    static func make(frame: NSRect) -> NSView {
+        if let glassClass = NSClassFromString("NSGlassEffectView") as? NSView.Type, glassClass.instancesRespond(to: setContentView) {
+            let view = glassClass.init(frame: frame)
+            WheelBackdrop.tint(view)
+            return view
+        }
+        // Before Liquid Glass: the closest material, with a view of its own for the tint.
+        let material = NSVisualEffectView(frame: frame)
+        material.material = .hudWindow
+        material.blendingMode = .behindWindow
+        material.state = .active
+        let tintView = NSView(frame: material.bounds)
+        tintView.wantsLayer = true
+        tintView.autoresizingMask = [.width, .height]
+        material.addSubview(tintView)
+        WheelBackdrop.tint(material)
+        return material
+    }
+
+    static func hold(_ content: NSView, in view: NSView) {
+        content.frame = view.bounds
+        content.autoresizingMask = [.width, .height]
+        if isGlass(view) { view.setValue(content, forKey: "contentView") } else { view.addSubview(content) }
+    }
+
+    static func release(_ content: NSView, from view: NSView) {
+        if isGlass(view) { view.setValue(nil, forKey: "contentView") }
+        content.removeFromSuperview()
+    }
+
+    private static func isGlass(_ view: NSView) -> Bool { !(view is NSVisualEffectView) && view.responds(to: setContentView) }
 }
 
 // MARK: - Main menu (shown while a window is open)
@@ -219,7 +321,7 @@ struct EditorScaffold<Canvas: View, Inspector: View>: View {
         HStack(spacing: 0) {
             canvas()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: .underPageBackgroundColor))
+                .background(Color.black.opacity(0.22))
                 .clipped()
             Divider()
             VStack(spacing: 0) {
@@ -243,7 +345,6 @@ struct EditorScaffold<Canvas: View, Inspector: View>: View {
                 .padding(12)
             }
             .frame(width: 290)
-            .background(VisualEffect(material: .sidebar, blending: .behindWindow))
         }
     }
 }

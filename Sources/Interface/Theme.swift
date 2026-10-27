@@ -1,20 +1,43 @@
 import AppKit
 import SwiftUI
 
-/// The app has one look: black surfaces, and whatever is selected turns white with black text.
-/// Windows always use the dark appearance, so system controls and materials match.
+/// Whatever is selected takes the strongest contrast the window allows: white with black text
+/// on dark windows, black with white text on light ones. The wheel, the editors and the other
+/// windows share one colour, black or white, so the selection is the same everywhere it appears.
+/// The wheel's highlighted slice is the one gentler exception: it covers a large part of the wheel.
 enum Palette {
-    /// The selection: highlighted wheel segment, primary buttons, chosen tools (21:1 with `onSelection`).
-    static let selection = NSColor.white
-    static let onSelection = NSColor(white: 0.04, alpha: 1)
-    /// Strokes, rings and selected outlines on dark surfaces.
-    static let accent = NSColor(white: 0.96, alpha: 1)
-    /// Tint for switches and sliders: graphite, so the white knob stays visible on the track.
-    static let controlTint = NSColor(white: 0.62, alpha: 1)
-    /// The wheel's solid backdrop when glass is off.
-    static let wheelSurface = NSColor(white: 0.06, alpha: 0.97)
+    /// The selection: primary buttons and chosen tools.
+    static let selection = adaptive(dark: .white, light: NSColor(white: 0.08, alpha: 1))
+    static let onSelection = adaptive(dark: NSColor(white: 0.04, alpha: 1), light: .white)
+    /// Strokes, rings and selected outlines.
+    static let accent = adaptive(dark: NSColor(white: 0.96, alpha: 1), light: NSColor(white: 0.1, alpha: 1))
+    /// Tint for switches and sliders: graphite, so the knob stays visible on the track.
+    static let controlTint = adaptive(dark: NSColor(white: 0.62, alpha: 1), light: NSColor(white: 0.42, alpha: 1))
+    /// The wheel's backdrop when glass is off: a soft black, or white.
+    static var wheelSurface: NSColor {
+        Settings.lookColor == .white ? NSColor(white: 0.96, alpha: 1) : NSColor(white: 0.165, alpha: 1)
+    }
+    /// The wheel's lines, names and icons.
+    static var wheelInk: NSColor {
+        Settings.lookColor == .white ? NSColor(white: 0.1, alpha: 1) : .white
+    }
+    /// The highlighted slice: a light veil of the ink, so it is seen on solid grey and on glass alike
+    /// without covering them, and the names and icons on it keep the ink. At 0.18 the ink holds
+    /// 4.5:1 on it and the veil shows against the surface, even on the thinnest glass over a window of the opposite colour.
+    static var wheelSelection: NSColor { wheelInk.withAlphaComponent(0.18) }
+    /// The glass, tinted with the chosen colour. The tint never drops below 0.75, enough to keep the ink
+    /// at 4.5:1 or better, and the selected slice and the hub readable, even over a window of the opposite
+    /// colour; the intensity only raises it to 0.9, short of a solid disc.
+    static func glassTint(_ intensity: Double = Settings.glassIntensity) -> NSColor {
+        NSColor(white: Settings.lookColor == .white ? 1 : 0, alpha: 0.75 + 0.15 * min(1, max(0, intensity)))
+    }
+    static var wheelAppearance: NSAppearance? {
+        NSAppearance(named: Settings.lookColor == .white ? .aqua : .darkAqua)
+    }
 
-    static let appearance = NSAppearance(named: .darkAqua)
+    private static func adaptive(dark: NSColor, light: NSColor) -> NSColor {
+        NSColor(name: nil) { $0.isDark ? dark : light }
+    }
 }
 
 extension NSAppearance {
@@ -34,7 +57,7 @@ extension NSColor {
 final class LookStore: ObservableObject {
     static let shared = LookStore()
 
-    /// Liquid Glass behind the wheel instead of solid black.
+    /// Liquid Glass behind the wheel instead of the solid dark grey.
     @Published var glassWheel: Bool = Settings.glassWheel {
         didSet {
             Settings.glassWheel = glassWheel
@@ -42,10 +65,27 @@ final class LookStore: ObservableObject {
         }
     }
 
+    /// How strongly the glass takes on the colour.
+    @Published var glassIntensity: Double = Settings.glassIntensity {
+        didSet {
+            Settings.glassIntensity = glassIntensity
+            NotificationCenter.default.post(name: LookStore.didChange, object: nil)
+        }
+    }
+
+    /// Black or white, for the wheel, the editors and every other window.
+    @Published var color: LookColor = Settings.lookColor {
+        didSet {
+            Settings.lookColor = color
+            LookStore.applyColor()
+            NotificationCenter.default.post(name: LookStore.didChange, object: nil)
+        }
+    }
+
     static let didChange = Notification.Name("SplitLookDidChange")
 
-    static func applyAppearance() {
-        NSApp.appearance = Palette.appearance
+    static func applyColor() {
+        NSApp.appearance = Palette.wheelAppearance
     }
 
     var accent: Color { Color(nsColor: Palette.accent) }
@@ -103,37 +143,45 @@ enum Sounds {
 
 // MARK: - SwiftUI building blocks
 
-/// Primary action button: white with black text, like the selection; pressing scales it down instantly.
+/// Primary action button: the selection's colours, semibold. Like every button here it answers
+/// the press at once, shrinking a little in a tenth of a second, and lets go the same way.
 struct PrimaryButtonStyle: ButtonStyle {
     @ObservedObject var look = LookStore.shared
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        return configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(look.onSelection)
             .padding(.horizontal, 14)
             .frame(minHeight: 28)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(look.selection))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .background(shape.fill(look.selection))
+            .overlay(shape.strokeBorder(Color.primary.opacity(Motion.increaseContrast ? 0.6 : 0), lineWidth: 1))
+            .contentShape(shape)
+            .opacity(isEnabled ? 1 : 0.4)
+            .pressable(configuration.isPressed)
     }
 }
 
-/// Secondary button: quiet fill, same press feedback.
+/// Secondary button: a light fill with a hairline edge, so it reads on dark grey, on glass and
+/// in light windows alike; the text a little heavier than body text, as on materials. Compact
+/// ones sit in rows of choices.
 struct SecondaryButtonStyle: ButtonStyle {
+    var compact = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .regular))
-            .padding(.horizontal, 12)
-            .frame(minHeight: 28)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(configuration.isPressed ? 0.16 : 0.08)))
+        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        return configuration.label
+            .font(.system(size: compact ? 12 : 13, weight: .medium))
+            .padding(.horizontal, compact ? 10 : 12)
+            .frame(minHeight: compact ? 24 : 28)
+            .background(shape.fill(Color.primary.opacity(configuration.isPressed ? 0.18 : 0.1)))
+            .overlay(shape.strokeBorder(Color.primary.opacity(Motion.increaseContrast ? 0.5 : 0.12), lineWidth: Motion.increaseContrast ? 1 : 0.5))
+            .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.4)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .pressable(configuration.isPressed)
     }
 }
 
@@ -149,8 +197,8 @@ struct ToolButtonStyle: ButtonStyle {
             .frame(width: 30, height: 28)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(selected ? look.selection : Color.primary.opacity(configuration.isPressed ? 0.14 : 0)))
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .contentShape(Rectangle())
+            .pressable(configuration.isPressed, scale: 0.94)
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -161,7 +209,15 @@ extension View {
         help(text).accessibilityLabel(text)
     }
 
-    /// Graphite tint for standard controls (sliders, toggles, pickers) and the dark appearance.
+    /// The press answered at once: a little smaller while held, in a tenth of a second. With
+    /// Reduce Motion on, it dims instead of moving.
+    func pressable(_ pressed: Bool, scale: CGFloat = 0.97) -> some View {
+        scaleEffect(pressed && !Motion.reduceMotion ? scale : 1)
+            .brightness(pressed && Motion.reduceMotion ? -0.08 : 0)
+            .animation(.easeOut(duration: 0.1), value: pressed)
+    }
+
+    /// Graphite tint for standard controls (sliders, toggles, pickers).
     func themed() -> some View {
         modifier(ThemedModifier())
     }
@@ -172,7 +228,6 @@ private struct ThemedModifier: ViewModifier {
         content
             .tint(Color(nsColor: Palette.controlTint))
             .accentColor(Color(nsColor: Palette.controlTint))
-            .preferredColorScheme(.dark)
     }
 }
 
