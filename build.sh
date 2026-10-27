@@ -57,7 +57,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 if [[ ! -f Resources/AppIcon.icns ]]; then
-  swift Resources/make_icon.swift build/AppIcon.iconset
+  mkdir -p build
+  swiftc -O Resources/Icon/main.swift Sources/Interface/Logo.swift -o build/make-icon
+  build/make-icon build/AppIcon.iconset
   iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
 fi
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
