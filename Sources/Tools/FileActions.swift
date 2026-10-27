@@ -28,11 +28,11 @@ enum WheelKind: String, CaseIterable {
         }
     }
 
-    // Defaults: ⇧ converts, ⌘ opens the tools and ⌥ the actions. All three can be changed.
+    // Defaults: ⇧ converts, ⌃ opens the tools and ⌥ the actions. All three can be changed.
     var defaultModifier: NSEvent.ModifierFlags {
         switch self {
         case .convert: return .shift
-        case .tools: return .command
+        case .tools: return .control
         case .actions: return .option
         }
     }

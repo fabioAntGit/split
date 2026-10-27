@@ -35,7 +35,7 @@ A file converter and editor for the macOS menu bar. Start dragging files, tap a 
 1. Start dragging files (Finder, the desktop, Mail…).
 2. While still dragging, tap a key once:
    - **⇧ Shift**: the **conversion** wheel (formats)
-   - **⌘ Command**: the **tools** wheel (editors, compress, PDF, sound…)
+   - **⌃ Control**: the **tools** wheel (editors, compress, PDF, sound…)
    - **⌥ Option**: the **actions** wheel (AirDrop, shelf, copy, move, Terminal)
 3. Drop on the slice you want. The result is saved next to the original, which is never changed.
 

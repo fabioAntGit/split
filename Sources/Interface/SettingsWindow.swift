@@ -4,7 +4,7 @@ import SwiftUI
 
 enum ModifierChoice {
     static var all: [(String, NSEvent.ModifierFlags)] { [
-        ("⇧ Shift", .shift), ("⌘ Command", .command), ("⌥ Option", .option), ("⌃ Control", .control),
+        ("⇧ Shift", .shift), ("⌃ Control", .control), ("⌥ Option", .option), ("⌘ Command", .command),
         ("⌃⌥ Control + Option", [.control, .option]), (L("Off"), []),
     ] }
 
