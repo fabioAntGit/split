@@ -11,9 +11,11 @@ struct WheelStyle: Equatable {
 /// Geometry of the wheel and where each slice's icon and name go. The size is the user's, so a
 /// wheel never changes size with what it shows. Every icon sits on one ring and every name right
 /// under its icon, all in one font, on up to two lines; a name too long for its slice ends in
-/// "…" (the centre shows the whole name of the slice under the pointer). A slice without an icon
-/// centres its name on the middle of the ring. Nothing comes closer than `clearance` to the
-/// lines around its slice, so it stays inside the white selection when the slice pops out.
+/// "…" (the centre shows the whole name of the slice under the pointer). The ring runs through the
+/// middle of the icon and its two lines of name together, not through the icon alone, so the pair
+/// is centred in its slice. A slice without an icon centres its name on the middle of the ring.
+/// Nothing comes closer than `clearance` to the lines around its slice, so it stays inside the
+/// selection when the slice pops out.
 struct WheelLayout {
     struct Slice: Equatable {
         /// Centre of the icon, relative to the wheel's centre (y up); nil without one.
@@ -27,7 +29,7 @@ struct WheelLayout {
     static let rimMargin: CGFloat = 12
     static let windowMargin: CGFloat = 10
     /// How far the chosen slice moves outwards.
-    static let pop: CGFloat = 5
+    static let pop: CGFloat = 2.5
     static let clearance: CGFloat = 6
     static let symbolGap: CGFloat = 3
     static let maxLines = 2
@@ -42,8 +44,12 @@ struct WheelLayout {
     let symbolSize: CGFloat
     /// The room an icon takes, the same for every slice so the names line up.
     let iconBox: CGSize
-    /// Distance from the centre to every icon.
+    /// Distance from the centre to the middle of every icon and its name together.
     let iconRadius: CGFloat
+    /// How far an icon, and its name with it, sits above that ring, which is the middle of the pair:
+    /// the same for all of them, so the names still line up. None without names under the icons, and
+    /// none on a wheel so crowded that the pair no longer fits between its lines.
+    let iconLift: CGFloat
     private(set) var slices: [Slice]
 
     var disc: CGFloat { outer + WheelLayout.rimMargin }
@@ -64,10 +70,29 @@ struct WheelLayout {
         }
     }
 
+    static func innerRadius(_ size: WheelSize) -> CGFloat { (outerRadius(size) * 0.36).rounded() }
+
     /// The side of the window a wheel of this size needs.
     static func windowSize(_ size: WheelSize) -> CGFloat { 2 * (outerRadius(size) + rimMargin + windowMargin) }
 
     func angle(of index: Int) -> CGFloat { (CGFloat(index) + 0.5) * step }
+
+    func slice(at offset: CGPoint) -> Int? { WheelLayout.slice(at: offset, count: count, size: style.size) }
+    func isOnHub(_ offset: CGPoint) -> Bool { WheelLayout.isOnHub(offset, size: style.size) }
+
+    /// The slice under a point given relative to the centre (y up), measured clockwise from
+    /// 12 o'clock. A generous margin outside the ring still counts; the hub doesn't. It needs
+    /// only the size, so a picture of the wheel can answer without laying out its names.
+    static func slice(at offset: CGPoint, count: Int, size: WheelSize) -> Int? {
+        guard count > 0 else { return nil }
+        let distance = hypot(offset.x, offset.y)
+        guard distance >= innerRadius(size) - 4, distance <= outerRadius(size) + rimMargin + 24 else { return nil }
+        var angle = .pi / 2 - atan2(offset.y, offset.x)
+        if angle < 0 { angle += 2 * .pi }
+        return Int(angle / (2 * .pi / CGFloat(count))) % count
+    }
+
+    static func isOnHub(_ offset: CGPoint, size: WheelSize) -> Bool { hypot(offset.x, offset.y) < innerRadius(size) - 4 }
 
     /// The icon and name of slice `index` together, relative to the wheel's centre, moved
     /// outwards by `popped`.
@@ -95,7 +120,7 @@ struct WheelLayout {
     /// never icons out of line.
     private static func fitted(titles: [String], symbols: [String?], style: WheelStyle) -> WheelLayout {
         let outer = outerRadius(style.size)
-        let inner = (outer * 0.36).rounded()
+        let inner = innerRadius(style.size)
         let scale = outer / outerRadius(.medium)
         func half(_ value: CGFloat) -> CGFloat { (value * 2).rounded() / 2 }
         let textScale = sqrt(scale)
@@ -104,6 +129,7 @@ struct WheelLayout {
         let names = Measurer.height(lines: maxLines, fontSize: fontSize, bold: false)
         let middle = (inner + outer) / 2
         let named = style.names && symbols.contains { $0 != nil }
+        let pairLift = (symbolGap + names) / 2
         var measurer = Measurer()
         var symbolSize = ((style.names ? 19 : 24) * textScale).rounded()
         while true {
@@ -114,20 +140,23 @@ struct WheelLayout {
                 ? stride(from: inner + clearance + iconBox.height / 2, through: outer - clearance - iconBox.height / 2, by: 2).sorted { abs($0 - preferred) < abs($1 - preferred) }
                 : [preferred]
             var best: (layout: WheelLayout, missing: Int, truncated: Int)?
-            for radius in radii {
-                var layout = WheelLayout(count: titles.count, style: style, inner: inner, outer: outer, fontSize: fontSize, labelFontSize: labelFontSize,
-                                         symbolSize: symbolSize, iconBox: iconBox, iconRadius: radius, slices: [])
-                guard layout.iconsFit(symbols) else { continue }
-                layout.fitSlices(titles: titles, symbols: symbols, measurer: &measurer)
-                let missing = layout.slices.filter { $0.text == nil && ($0.icon == nil || named) }.count
-                let truncated = layout.slices.filter(\.truncated).count
-                if best == nil || (missing, truncated) < (best!.missing, best!.truncated) { best = (layout, missing, truncated) }
-                if missing == 0 && truncated == 0 { break }
+            // Centred as a pair when there is room for that, else with the icon itself on the ring.
+            for lift in named ? [pairLift, 0] : [0] where best.map({ $0.missing + $0.truncated > 0 }) ?? true {
+                for radius in radii {
+                    var layout = WheelLayout(count: titles.count, style: style, inner: inner, outer: outer, fontSize: fontSize, labelFontSize: labelFontSize,
+                                             symbolSize: symbolSize, iconBox: iconBox, iconRadius: radius, iconLift: lift, slices: [])
+                    guard layout.iconsFit(symbols) else { continue }
+                    layout.fitSlices(titles: titles, symbols: symbols, measurer: &measurer)
+                    let missing = layout.slices.filter { $0.text == nil && ($0.icon == nil || named) }.count
+                    let truncated = layout.slices.filter(\.truncated).count
+                    if best == nil || (missing, truncated) < (best!.missing, best!.truncated) { best = (layout, missing, truncated) }
+                    if missing == 0 && truncated == 0 { break }
+                }
             }
             if let best { return best.layout }
             guard symbolSize > 8 else {
                 var layout = WheelLayout(count: titles.count, style: style, inner: inner, outer: outer, fontSize: fontSize, labelFontSize: labelFontSize,
-                                         symbolSize: symbolSize, iconBox: iconBox, iconRadius: preferred, slices: [])
+                                         symbolSize: symbolSize, iconBox: iconBox, iconRadius: preferred, iconLift: 0, slices: [])
                 layout.fitSlices(titles: titles, symbols: symbols, measurer: &measurer)
                 return layout
             }
@@ -144,7 +173,7 @@ struct WheelLayout {
     }
 
     private func iconCentre(_ index: Int) -> CGPoint {
-        CGPoint(x: iconRadius * sin(angle(of: index)), y: iconRadius * cos(angle(of: index)))
+        CGPoint(x: iconRadius * sin(angle(of: index)), y: iconRadius * cos(angle(of: index)) + iconLift)
     }
 
     private mutating func fitSlices(titles: [String], symbols: [String?], measurer: inout Measurer) {

@@ -69,6 +69,7 @@ final class WheelController {
             acceptClicks(panel, wheel)
         } else {
             panel.orderFrontRegardless()
+            panel.makeKey()
         }
         // The wheel grows out of the cursor, so it's clear where it came from.
         let anchor = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
@@ -80,7 +81,6 @@ final class WheelController {
 
     /// From here on the wheel is clicked: it takes the keyboard and closes on a click elsewhere.
     private func acceptClicks(_ panel: WheelPanel, _ wheel: WheelView) {
-        panel.allowsKey = true
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(wheel)
@@ -115,8 +115,9 @@ final class WheelController {
 }
 
 final class WheelPanel: NSPanel {
-    var allowsKey = false
-    override var canBecomeKey: Bool { allowsKey }
+    /// Glass only looks alive in the key window; in any other it goes flat and grey. Being
+    /// nonactivating, the wheel can take the key without taking the app's focus from what is dragged.
+    override var canBecomeKey: Bool { true }
 }
 
 /// A value that follows its target like a critically damped spring and can be
@@ -183,7 +184,7 @@ final class WheelView: NSView {
             if highlighted != nil, window != nil { Haptics.snap() }
             startAnimating()
             armSpring()
-            needsDisplay = true
+            redraw()
         }
     }
 
@@ -192,7 +193,7 @@ final class WheelView: NSView {
         didSet {
             guard hubHighlighted != oldValue else { return }
             armSpring()
-            needsDisplay = true
+            redraw()
         }
     }
 
@@ -213,6 +214,7 @@ final class WheelView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: layout.size, height: layout.size))
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        appearance = Palette.wheelAppearance
         installBackdrop()
         // Drawing happens in an overlay above the material.
         drawing.owner = self
@@ -235,10 +237,10 @@ final class WheelView: NSView {
 
     @objc private func lookChanged() {
         installBackdrop()
-        subviews.forEach { $0.needsDisplay = true }
+        redraw()
     }
 
-    /// Solid black, or glass when chosen in Settings (never with Reduce Transparency).
+    /// Solid dark grey, or glass when chosen in Settings (never with Reduce Transparency).
     private func installBackdrop() {
         backdrop?.removeFromSuperview()
         let disc = NSRect(x: bounds.midX - layout.disc, y: bounds.midY - layout.disc, width: layout.disc * 2, height: layout.disc * 2)
@@ -252,9 +254,12 @@ final class WheelView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
-    override var needsDisplay: Bool {
-        didSet { if needsDisplay { subviews.forEach { $0.needsDisplay = true } } }
-    }
+
+    /// Everything on the wheel is drawn by `drawing`, so it is asked directly: a layer-backed
+    /// view's `needsDisplay` reads back false straight away and can't pass the request on.
+    func redraw() { drawing.needsDisplay = true }
+    /// How often the wheel has been drawn; tests use it to see that every change reaches the screen.
+    fileprivate(set) var drawCount = 0
 
     var center: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
     var step: CGFloat { layout.step }
@@ -264,25 +269,23 @@ final class WheelView: NSView {
 
     /// Angle measured clockwise from 12 o'clock. A generous margin outside the ring still counts.
     func index(at point: NSPoint) -> Int? {
-        guard !items.isEmpty else { return nil }
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        let distance = hypot(dx, dy)
-        guard distance >= layout.inner - 4, distance <= layout.disc + 24 else { return nil }
-        var angle = .pi / 2 - atan2(dy, dx)
-        if angle < 0 { angle += 2 * .pi }
-        return Int(angle / step) % items.count
+        layout.slice(at: CGPoint(x: point.x - center.x, y: point.y - center.y))
     }
 
     func isOnHub(_ point: NSPoint) -> Bool {
-        hypot(point.x - center.x, point.y - center.y) < layout.inner - 4
+        layout.isOnHub(CGPoint(x: point.x - center.x, y: point.y - center.y))
     }
 
     /// The wheel as a picture, drawn by the wheel itself, with `highlighted` already popped out
-    /// (Settings previews arrangements with it).
+    /// (Settings previews arrangements with it). Glass can't be captured in a picture, so
+    /// without `backdrop` the picture leaves it out for a live one to be put behind.
     static func picture(items: [WheelItem], title: String, subtitle: String, highlighted: Int? = nil,
-                        style: WheelStyle = .current, back: String? = nil) -> NSImage? {
+                        style: WheelStyle = .current, back: String? = nil, backdrop: Bool = true) -> NSImage? {
         let view = WheelView(items: items, title: title, subtitle: subtitle, urls: [], clickMode: false, style: style)
+        if !backdrop {
+            view.backdrop?.removeFromSuperview()
+            view.backdrop = nil
+        }
         if let back { view.trail = [(items: [], title: back, subtitle: "", group: 0)] }
         if let highlighted, view.pops.indices.contains(highlighted) {
             view.highlighted = highlighted
@@ -335,7 +338,7 @@ final class WheelView: NSView {
         pops = Array(repeating: SpringValue(), count: items.count)
         highlighted = highlight
         segmentElements = makeSegmentElements()
-        needsDisplay = true
+        redraw()
         if window != nil { Haptics.snap() }
         animateLevelChange()
         NSAccessibility.post(element: self, notification: .layoutChanged)
@@ -398,7 +401,7 @@ final class WheelView: NSView {
             }
             settled = settled && pops[index].isSettled
         }
-        subviews.forEach { $0.needsDisplay = true }
+        redraw()
         if settled { stopAnimating() }
     }
 
@@ -625,6 +628,7 @@ private final class WheelDrawing: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let owner, let context = NSGraphicsContext.current?.cgContext else { return }
+        owner.drawCount += 1
         let center = owner.center
         let layout = owner.layout
         let (inner, outer, disc) = owner.geometry
@@ -635,12 +639,12 @@ private final class WheelDrawing: NSView {
         // Edge of the material: a hairline that reads as light catching glass.
         let rim = NSBezierPath(ovalIn: NSRect(x: center.x - disc + 0.5, y: center.y - disc + 0.5, width: disc * 2 - 1, height: disc * 2 - 1))
         rim.lineWidth = contrast ? 1.5 : 1
-        NSColor.white.withAlphaComponent(contrast ? 0.5 : (Settings.glassWheel ? 0.35 : 0.14)).setStroke()
+        Palette.wheelInk.withAlphaComponent(contrast ? 0.5 : (Settings.glassWheel ? 0.35 : 0.14)).setStroke()
         rim.stroke()
 
         // Separators between segments.
         if items.count > 1 {
-            NSColor.white.withAlphaComponent(contrast ? 0.4 : 0.14).setStroke()
+            Palette.wheelInk.withAlphaComponent(contrast ? 0.4 : 0.14).setStroke()
             for index in 0..<items.count {
                 let angle = CGFloat(index) * step
                 let line = NSBezierPath()
@@ -651,37 +655,33 @@ private final class WheelDrawing: NSView {
             }
         }
 
-        // Highlight: a rounded segment inset from its neighbours (like a menu selection).
+        // Highlight: a platter inside its own slice, 5 pt from the dividers and the hub and short of the rim,
+        // where a group's dots sit, with a hairline edge, like a menu selection. It is drawn `lift` closer
+        // to the hub, so once it has risen with its slice it sits evenly.
+        let lift = Motion.reduceMotion ? 0 : WheelLayout.pop
         for index in items.indices {
             let pop = owner.pop(index)
-            let isHighlighted = index == owner.highlighted
-            let strength = isHighlighted ? 1 : pop
+            let strength = index == owner.highlighted ? 1 : pop
             guard strength > 0.01 else { continue }
             let mid = layout.angle(of: index)
-            let offset = Motion.reduceMotion ? 0 : WheelLayout.pop * pop
-            let shift = CGPoint(x: offset * sin(mid), y: offset * cos(mid))
-            context.saveGState()
-            context.translateBy(x: shift.x, y: shift.y)
-            context.setAlpha(strength)
-            context.beginTransparencyLayer(auxiliaryInfo: nil)
-            let corner: CGFloat = 11
+            let veil = Palette.wheelSelection
             let path = segment(center, start: CGFloat(index) * step, end: CGFloat(index + 1) * step,
-                               inner: inner, outer: outer, inset: 5 + corner, single: items.count == 1)
-            Palette.selection.setFill()
-            Palette.selection.setStroke()
+                               inner: inner - 8 - lift, outer: outer + 7.5 - lift, inset: 5, corner: 9, single: items.count == 1)
+            context.saveGState()
+            context.translateBy(x: lift * pop * sin(mid), y: lift * pop * cos(mid))
+            veil.withAlphaComponent(veil.alphaComponent * strength).setFill()
             path.fill()
-            path.lineWidth = corner * 2
-            path.lineJoinStyle = .round
+            Palette.wheelInk.withAlphaComponent((contrast ? 0.5 : 0.14) * strength).setStroke()
+            path.lineWidth = 1
             path.stroke()
-            context.endTransparencyLayer()
             context.restoreGState()
         }
 
         for (index, item) in items.enumerated() {
-            let offset = Motion.reduceMotion ? 0 : WheelLayout.pop * owner.pop(index)
+            let pop = Motion.reduceMotion ? 0 : owner.pop(index)
             let angle = layout.angle(of: index)
-            let shift = CGPoint(x: center.x + offset * sin(angle), y: center.y + offset * cos(angle))
-            drawSlice(item, layout.slices[index], layout: layout, at: shift, highlighted: index == owner.highlighted)
+            let shift = CGPoint(x: center.x + WheelLayout.pop * pop * sin(angle), y: center.y + WheelLayout.pop * pop * cos(angle))
+            drawSlice(item, layout.slices[index], layout: layout, at: shift, grow: pop)
             if item.isGroup { drawGroupMark(center, angle: angle, radius: outer + WheelLayout.rimMargin / 2) }
         }
 
@@ -692,9 +692,10 @@ private final class WheelDrawing: NSView {
         CGPoint(x: center.x + radius * sin(angle), y: center.y + radius * cos(angle))
     }
 
-    /// Annular segment whose straight edges sit `inset` points away from the radial dividers.
+    /// Annular segment whose edges all sit `inset` points inside the slice, with rounded corners of
+    /// radius `corner`, or less where the slice is too narrow for it.
     private func segment(_ center: CGPoint, start: CGFloat, end: CGFloat, inner: CGFloat, outer: CGFloat,
-                         inset: CGFloat, single: Bool) -> NSBezierPath {
+                         inset: CGFloat, corner: CGFloat, single: Bool) -> NSBezierPath {
         let ro = outer - inset
         let ri = inner + inset
         let path = NSBezierPath()
@@ -704,26 +705,35 @@ private final class WheelDrawing: NSView {
             path.windingRule = .evenOdd
             return path
         }
-        let a0o = start + asin(min(1, inset / ro))
-        let a1o = end - asin(min(1, inset / ro))
-        let a0i = start + asin(min(1, inset / ri))
-        let a1i = end - asin(min(1, inset / ri))
+        let narrow = sin((end - start) / 2)
+        let r = max(1, min(corner, (narrow * ri - inset) / (1 - narrow)))
+        // Each corner is a circle of radius r that touches its straight edge and its arc.
+        let outerCentre = ro - r
+        let innerCentre = ri + r
+        let outerTurn = asin(min(1, (inset + r) / outerCentre))
+        let innerTurn = asin(min(1, (inset + r) / innerCentre))
         func degrees(_ angle: CGFloat) -> CGFloat { 90 - angle * 180 / .pi }
-        path.move(to: point(center, angle: a0o, radius: ro))
-        path.appendArc(withCenter: center, radius: ro, startAngle: degrees(a0o), endAngle: degrees(max(a0o, a1o)), clockwise: true)
-        path.line(to: point(center, angle: max(a0i, a1i), radius: ri))
-        path.appendArc(withCenter: center, radius: ri, startAngle: degrees(max(a0i, a1i)), endAngle: degrees(a0i), clockwise: false)
+        func arc(at centre: CGPoint, from: CGFloat, to: CGFloat) {
+            path.appendArc(withCenter: centre, radius: r, startAngle: degrees(from), endAngle: degrees(to), clockwise: true)
+        }
+        let quarter = CGFloat.pi / 2
+        arc(at: point(center, angle: start + innerTurn, radius: innerCentre), from: start + innerTurn + .pi, to: start + 3 * quarter)
+        arc(at: point(center, angle: start + outerTurn, radius: outerCentre), from: start - quarter, to: start + outerTurn)
+        path.appendArc(withCenter: center, radius: ro, startAngle: degrees(start + outerTurn), endAngle: degrees(end - outerTurn), clockwise: true)
+        arc(at: point(center, angle: end - outerTurn, radius: outerCentre), from: end - outerTurn, to: end + quarter)
+        arc(at: point(center, angle: end - innerTurn, radius: innerCentre), from: end + quarter, to: end - innerTurn + .pi)
+        path.appendArc(withCenter: center, radius: ri, startAngle: degrees(end - innerTurn), endAngle: degrees(start + innerTurn), clockwise: false)
         path.close()
         return path
     }
 
-    /// The icon on the ring every icon shares, and the name under it.
-    private func drawSlice(_ item: WheelItem, _ slice: WheelLayout.Slice, layout: WheelLayout, at origin: CGPoint, highlighted: Bool) {
-        let color = highlighted ? Palette.onSelection : NSColor.white
+    /// The icon on the ring every icon shares, and the name under it. The icon swells a little with `grow`.
+    private func drawSlice(_ item: WheelItem, _ slice: WheelLayout.Slice, layout: WheelLayout, at origin: CGPoint, grow: CGFloat) {
+        let color = Palette.wheelInk
         if let icon = slice.icon, let symbol = item.symbol, let image = WheelLayout.symbolImage(symbol, pointSize: layout.symbolSize) {
             let tinted = image.tinted(color)
-            tinted.draw(in: NSRect(x: origin.x + icon.x - tinted.size.width / 2, y: origin.y + icon.y - tinted.size.height / 2,
-                                   width: tinted.size.width, height: tinted.size.height))
+            let size = CGSize(width: tinted.size.width * (1 + 0.06 * grow), height: tinted.size.height * (1 + 0.06 * grow))
+            tinted.draw(in: NSRect(x: origin.x + icon.x - size.width / 2, y: origin.y + icon.y - size.height / 2, width: size.width, height: size.height))
         }
         guard let box = slice.text else { return }
         let bold = slice.icon == nil
@@ -733,7 +743,7 @@ private final class WheelDrawing: NSView {
 
     /// Three dots on the rim: this slice opens a wheel of its own.
     private func drawGroupMark(_ center: CGPoint, angle: CGFloat, radius: CGFloat) {
-        NSColor.white.withAlphaComponent(Motion.increaseContrast ? 0.8 : 0.5).setFill()
+        Palette.wheelInk.withAlphaComponent(Motion.increaseContrast ? 0.8 : 0.5).setFill()
         let gap: CGFloat = 5.5 / radius
         for step in -1...1 {
             let dot = point(center, angle: angle + CGFloat(step) * gap, radius: radius)
@@ -744,7 +754,8 @@ private final class WheelDrawing: NSView {
     private func drawHub(center: CGPoint, radius: CGFloat, owner: WheelView) {
         let scale = owner.layout.textScale
         let hub = NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-        NSColor.white.withAlphaComponent(owner.hubHighlighted ? 0.2 : 0.08).setFill()
+        let ink = Palette.wheelInk
+        ink.withAlphaComponent(owner.hubHighlighted ? 0.2 : 0.08).setFill()
         hub.fill()
 
         let style = NSMutableParagraphStyle()
@@ -756,31 +767,32 @@ private final class WheelDrawing: NSView {
         var detail = owner.subtitle
         var icon = owner.iconForHub
         if let index = owner.highlighted {
-            let item = owner.items[index]
-            title = item.title
-            detail = item.detail ?? (owner.clickMode ? L("Click to choose") : L("Drop here"))
+            // Just the name, so there is room for all of it; VoiceOver still reads the detail.
+            title = owner.items[index].title
+            detail = ""
             icon = nil
         } else if let parent = owner.parentTitle {
             detail = L("Back to %@", parent)
             icon = NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 15 * scale, weight: .semibold))?.tinted(.white)
+                .withSymbolConfiguration(.init(pointSize: 15 * scale, weight: .semibold))?.tinted(ink)
         } else if owner.items.isEmpty {
             title = L("Nothing to do")
         }
         let titleText = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: max(10.5, 12.5 * scale), weight: .semibold),
-            .foregroundColor: NSColor.white,
+            .foregroundColor: ink,
             .paragraphStyle: style,
         ])
         let detailText = NSAttributedString(string: detail, attributes: [
             .font: NSFont.systemFont(ofSize: max(9.5, 10.5 * scale), weight: .regular),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.62),
+            .foregroundColor: ink.withAlphaComponent(0.62),
             .paragraphStyle: style,
         ])
-        let titleHeight = min(32 * scale, ceil(titleText.boundingRect(with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin]).height))
-        let detailHeight = min(27 * scale, ceil(detailText.boundingRect(with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin]).height))
+        // A name on its own may take a third line.
+        let titleHeight = min((detail.isEmpty ? 48 : 32) * scale, ceil(titleText.boundingRect(with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin]).height))
+        let detailHeight = detail.isEmpty ? 0 : min(27 * scale, ceil(detailText.boundingRect(with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin]).height))
         let iconSize: CGSize = icon.map { owner.parentTitle == nil ? CGSize(width: 30 * scale, height: 30 * scale) : $0.size } ?? .zero
-        let total = iconSize.height + (iconSize.height > 0 ? 4 : 0) + titleHeight + 1 + detailHeight
+        let total = iconSize.height + (iconSize.height > 0 ? 4 : 0) + titleHeight + (detail.isEmpty ? 0 : 1 + detailHeight)
         var y = center.y + total / 2
         if let icon, iconSize.height > 0 {
             icon.draw(in: NSRect(x: center.x - iconSize.width / 2, y: y - iconSize.height, width: iconSize.width, height: iconSize.height))
@@ -788,6 +800,7 @@ private final class WheelDrawing: NSView {
         }
         titleText.draw(with: NSRect(x: center.x - width / 2, y: y - titleHeight, width: width, height: titleHeight),
                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        guard !detail.isEmpty else { return }
         y -= titleHeight + 1
         detailText.draw(with: NSRect(x: center.x - width / 2, y: y - detailHeight, width: width, height: detailHeight),
                         options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
@@ -806,7 +819,7 @@ extension NSImage {
     }
 }
 
-/// What sits behind the wheel: a black disc, or Liquid Glass. `NSGlassEffectView` exists from
+/// What sits behind the wheel: a dark grey disc, or Liquid Glass. `NSGlassEffectView` exists from
 /// macOS 26 and the build SDK predates it, so it is found at run time; older systems get the
 /// closest material instead.
 enum WheelBackdrop {
@@ -822,22 +835,37 @@ enum WheelBackdrop {
         if let glassClass = NSClassFromString("NSGlassEffectView") as? NSView.Type {
             let view = glassClass.init(frame: frame)
             if view.responds(to: NSSelectorFromString("setCornerRadius:")) { view.setValue(radius, forKey: "cornerRadius") }
-            view.appearance = Palette.appearance
+            // The clear variant (style 1): what is behind shows through, only lightly frosted.
+            if view.responds(to: NSSelectorFromString("setStyle:")) { view.setValue(1, forKey: "style") }
+            tint(view)
             return view
         }
         let material = NSVisualEffectView(frame: frame)
         material.material = .hudWindow
         material.blendingMode = .behindWindow
         material.state = .active
-        material.appearance = Palette.appearance
         material.maskImage = NSImage(size: frame.size, flipped: false) { rect in
             NSColor.black.setFill()
             NSBezierPath(ovalIn: rect).fill()
             return true
         }
+        let tintView = NSView(frame: material.bounds)
+        tintView.wantsLayer = true
+        tintView.layer?.cornerRadius = radius
+        tintView.autoresizingMask = [.width, .height]
+        material.addSubview(tintView)
+        tint(material)
         return material
     }
 
-    /// True when the real Liquid Glass is available (macOS 26 and later).
-    static var hasLiquidGlass: Bool { NSClassFromString("NSGlassEffectView") != nil }
+    /// Gives glass the colour and intensity Settings asks for, in place. Before Liquid Glass, the
+    /// material's first subview carries the tint; the solid disc has none.
+    static func tint(_ view: NSView) {
+        view.appearance = Palette.wheelAppearance
+        if view is NSVisualEffectView {
+            view.subviews.first?.layer?.backgroundColor = Palette.glassTint().cgColor
+        } else if view.responds(to: NSSelectorFromString("setTintColor:")) {
+            view.setValue(Palette.glassTint(), forKey: "tintColor")
+        }
+    }
 }

@@ -77,11 +77,12 @@ enum WheelScope: Hashable {
     }
 }
 
-/// A slice as Settings lists it, before any file is chosen.
+/// A slice as Settings lists it, before any file is chosen, with what it does.
 struct WheelChoice: Identifiable, Equatable {
     let id: String
     let title: String
     let symbol: String?
+    let explanation: String
 }
 
 /// The groups the wheels start with: variants of one task behind a single slice, so a wheel
@@ -196,13 +197,17 @@ enum WheelCatalog {
     static func choices(for scope: WheelScope) -> [WheelChoice] {
         switch scope {
         case .convert(let source):
-            return merged(source.formats.map { Conversions.targets(for: $0) }).map { WheelChoice(id: $0.rawValue, title: $0.label, symbol: nil) }
+            return merged(source.formats.map { Conversions.targets(for: $0) }).map { target in
+                let from = source.formats.filter { Conversions.targets(for: $0).contains(target) }.map(\.label)
+                return WheelChoice(id: target.rawValue, title: target.label, symbol: nil,
+                                   explanation: target.summary + " " + L("Offered for %@.", listed(from)))
+            }
         case .tools:
-            return EditorTool.allCases.map { WheelChoice(id: $0.rawValue, title: $0.title, symbol: $0.symbol) }
+            return EditorTool.allCases.map { WheelChoice(id: $0.rawValue, title: $0.title, symbol: $0.symbol, explanation: $0.explanation) }
                 + QuickTool.allCases.filter { $0 != .removeBackground || Tools.canRemoveBackground }
-                    .map { WheelChoice(id: $0.rawValue, title: $0.title, symbol: $0.symbol) }
+                    .map { WheelChoice(id: $0.rawValue, title: $0.title, symbol: $0.symbol, explanation: $0.explanation) }
         case .actions:
-            return FileAction.allCases.map { WheelChoice(id: $0.rawValue, title: $0.title, symbol: $0.symbol) }
+            return FileAction.allCases.map { WheelChoice(id: $0.rawValue, title: $0.title, symbol: $0.symbol, explanation: $0.explanation) }
         }
     }
 

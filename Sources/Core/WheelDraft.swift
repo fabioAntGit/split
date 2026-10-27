@@ -58,6 +58,21 @@ struct WheelDraft: Equatable {
         }
     }
 
+    /// Puts a slice or group right before `neighbour` in the list it is in (the top level, or
+    /// its group), or last without one. A wheel shows only what isn't hidden, so a drop on it
+    /// is said by the slice that is to follow, and hidden ones keep their places.
+    mutating func place(_ id: String, before neighbour: String?) {
+        guard id != neighbour else { return }
+        if let group = group(of: id), let index = entries.firstIndex(where: { $0.id == group }), var members = entries[index].members {
+            members.removeAll { $0 == id }
+            members.insert(id, at: neighbour.flatMap { members.firstIndex(of: $0) } ?? members.count)
+            entries[index].members = members
+        } else if let from = entries.firstIndex(where: { $0.id == id }) {
+            let entry = entries.remove(at: from)
+            entries.insert(entry, at: neighbour.flatMap { next in entries.firstIndex { $0.id == next } } ?? entries.count)
+        }
+    }
+
     // MARK: Groups
 
     /// Puts top-level slices in a new group, where the first of them was, and returns its identifier.
