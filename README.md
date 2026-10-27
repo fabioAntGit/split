@@ -14,7 +14,7 @@ A file converter and editor for the macOS menu bar. Start dragging files, tap a 
 ## Install
 
 1. Open `Split-<version>.dmg` and drag **Split** onto **Applications**.
-2. Open Split from Applications. Without a Developer ID signature, macOS blocks the first launch: open **System Settings › Privacy & Security**, click **Open Anyway** next to Split, and confirm. This is needed only once.
+2. Open Split from Applications. The release on GitHub isn't signed with an Apple Developer ID, so macOS blocks the first launch: open **System Settings › Privacy & Security**, click **Open Anyway** next to Split, and confirm. This is needed only once.
 3. Install the free engines in Terminal (Settings › Engines shows the exact command for whatever is missing):
 
    ```bash
@@ -41,18 +41,21 @@ Slices that do similar things share one slice with three dots on its rim, for ex
 
 ### Settings › Wheels
 
-- **Order and visibility:** drag slices to reorder them, untick the ones you don't use.
-- **Groups:** select slices (⌘-click) and click **Group**. Open a group to rename it, reorder its slices, add or remove them, or ungroup it. **Restore Defaults** brings back the original wheel.
+The preview is the wheel itself, as saved, over your desktop picture and with its real backdrop. It always has the same size, so the slices are easy to arrange whatever size the wheel opens at.
+
+- **Order:** drag a slice on the preview to where you want it, or drag a row from the list onto the slice whose place it should take (an unticked slice shows again). Clicking a group's slice opens it, so its own slices can be dragged too.
+- **What a slice does:** click it, on the preview or in the list, to read what it does and for which files, and switch it off if you don't need it. Unticked slices don't appear.
+- **Groups:** select slices (⌘-click) and click **Group**. Open a group to rename it, add or remove slices, or ungroup it. **Restore Defaults** brings back the original wheel.
 - **Size:** from Extra Small to Extra Large. Icons always stay on one ring; a name too long for a small slice ends in “…”, and the centre shows it whole.
 - **Names under icons:** turn it off for a wheel with icons only.
-
-The preview shows the result as you change it.
+- **Color:** black (a soft black) or white, for the wheel, the editors and every other window.
+- **Glass background:** the desktop shows through the wheel and the editors, tinted with the colour so the text stays readable over any desktop; **Intensity** sets how strongly.
 
 ## Editors
 
 | Editor | For | What it does |
 |---|---|---|
-| Crop | Images | Fixed or free proportions, rotate 90°, flip |
+| Crop | Images | Fixed or free proportions, ready-made shapes for Instagram, Stories and Reels, YouTube, X, Facebook and LinkedIn (the shape only: pictures are never resized), rotate 90°, flip |
 | Annotate and Cover | Images | Arrows, lines, shapes, text, numbers, highlighter; blur, pixelate or black out areas; blur faces automatically (Vision) |
 | Adjust | Images | Exposure, contrast, saturation, temperature and filters, with a before/after comparison |
 | Add Background | Images | Padding, corners, shadow, gradients, colour or blurred image, output proportion |
@@ -71,6 +74,8 @@ Compress (image, video, audio and PDF) or compress to a target size, remove meta
 **Activity…** in the menu bar lists recent jobs and their results.
 
 ## What it converts
+
+**Settings › Formats** answers the same per format: choose one to see what it turns into and what it's made from, with a dimmed name when a free program is still missing.
 
 | From | To | Engine |
 |---|---|---|
@@ -91,7 +96,7 @@ The XLSX it writes keeps numbers, dates, percentages and formulas, with a bold h
 
 ## Look
 
-- The interface is dark: the wheel is black and the slice under the pointer turns white. Settings › General also offers a **Glass** backdrop for the wheel.
+- The wheel is black or white, solid or glass, and the slice under the pointer is lit by a soft platter of the wheel's ink, inset in its slice. The editors wear the same backdrop, and Settings and the other windows follow the same colour.
 - Springs are critically damped and interruptible, the wheel opens at the pointer, press highlights and release confirms, haptics only when snapping and confirming, and sounds only at the end and on errors (they can be turned off).
 - Reduce Motion, Reduce Transparency and Increase Contrast are respected. Text on the highlight has a contrast of at least 4.5:1 in light and dark (checked by the tests).
 - The interface is in English, Portuguese, French and Spanish.
@@ -134,9 +139,7 @@ You need Apple's Command Line Tools (`xcode-select --install`); Xcode isn't requ
 Tests/run.sh      # every test
 ```
 
-`make-dmg.sh` signs with a Developer ID and notarizes when `SIGN_IDENTITY` and `NOTARY_PROFILE` are set (see the script); otherwise the app keeps an ad hoc signature.
-
-`Tests/run.sh` builds the app and the tests, generates every sample from scratch (nothing is downloaded) and runs 161 tests with about 76,000 checks:
+`Tests/run.sh` builds the app and the tests, generates every sample from scratch (nothing is downloaded) and runs 167 tests with about 80,000 checks:
 
 - **Conversion:** every wheel format for every sample, with the result's content checked (colours, pages, duration, codecs, text and accents).
 - **Tools and editors:** compress, metadata, background, PDF, ZIP, loudness, silences, video and every editor.
@@ -172,4 +175,4 @@ SPLIT_OFFICE=1 Tests/run.sh Office
 | `Sources/Editors` | The editors and their shared kit |
 | `Sources/Interface` | Drag gesture, wheel and its layout, HUD, shelf, settings, theme |
 | `Tests/` | Its own harness (the Command Line Tools have no XCTest), generated samples and suites |
-| `Resources/` | Icon, entitlements and translations |
+| `Resources/` | App icon and disk image background, with the tools that draw them, entitlements and translations |
