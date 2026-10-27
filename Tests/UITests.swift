@@ -24,16 +24,68 @@ func registerUITests() {
         }
     }
 
-    test("Interface", "Black and white: text on the selection ≥ 4.5:1, controls ≥ 3:1") {
-        let dark = NSAppearance(named: .darkAqua)!
-        let window = NSColor.windowBackgroundColor.cgColor(for: dark)
-        let selection = Palette.selection.cgColor
-        check(Contrast.ratio(selection, Palette.onSelection.cgColor) >= 4.5, "text on the white selection: \(Contrast.format(selection, Palette.onSelection.cgColor))")
-        check(Contrast.ratio(NSColor.white.cgColor, Palette.wheelSurface.cgColor) >= 4.5, "white labels on the black wheel")
-        check(Contrast.ratio(Palette.accent.cgColor, window) >= 3, "accent against the window: \(Contrast.format(Palette.accent.cgColor, window))")
-        check(Contrast.ratio(Palette.controlTint.cgColor, window) >= 3, "control tint against the window: \(Contrast.format(Palette.controlTint.cgColor, window))")
-        check(Contrast.luminance(selection) > 0.95 && Contrast.luminance(Palette.wheelSurface.cgColor) < 0.01, "the selection is white, the wheel black")
-        check(Palette.appearance?.name == .darkAqua, "the app always uses the dark appearance")
+    test("Interface", "Black and white: text on the selection ≥ 4.5:1, controls ≥ 3:1, in dark and light windows") {
+        for name in [NSAppearance.Name.darkAqua, .aqua] {
+            let appearance = NSAppearance(named: name)!
+            let window = NSColor.windowBackgroundColor.cgColor(for: appearance)
+            let selection = Palette.selection.cgColor(for: appearance)
+            let onSelection = Palette.onSelection.cgColor(for: appearance)
+            let accent = Palette.accent.cgColor(for: appearance)
+            let tint = Palette.controlTint.cgColor(for: appearance)
+            check(Contrast.ratio(selection, onSelection) >= 4.5, "\(name.rawValue): text on the selection: \(Contrast.format(selection, onSelection))")
+            check(Contrast.ratio(accent, window) >= 3, "\(name.rawValue): accent against the window: \(Contrast.format(accent, window))")
+            check(Contrast.ratio(tint, window) >= 3, "\(name.rawValue): control tint against the window: \(Contrast.format(tint, window))")
+            check(Contrast.luminance(selection) > 0.95 || Contrast.luminance(selection) < 0.01, "\(name.rawValue): the selection is white or black")
+        }
+        let color = LookStore.shared.color
+        defer { LookStore.shared.color = color }
+        for look in LookColor.allCases {
+            LookStore.shared.color = look
+            let surface = Palette.wheelSurface.cgColor
+            let ink = Palette.wheelInk.cgColor
+            let appearance = try require(Palette.wheelAppearance, "\(look): no appearance for the wheel")
+            check(Contrast.ratio(ink, surface) >= 4.5, "\(look): names on the wheel: \(Contrast.format(ink, surface))")
+            check(appearance.isDark == (look == .black), "\(look): the wheel and the windows are \(look == .black ? "dark" : "light")")
+            check(NSApp.appearance?.name == appearance.name, "\(look): every window follows the colour")
+            // The highlighted slice is a veil of the ink over the surface: see-through, so it is judged as laid on it.
+            let veil = Palette.wheelSelection
+            let weight = Double(veil.alphaComponent)
+            let under = Contrast.components(surface)
+            let over = Contrast.components(veil.cgColor)
+            let mix = (0..<3).map { (under[$0] * (1 - weight) + over[$0] * weight) / 255 }
+            let slice = CGColor(srgbRed: mix[0], green: mix[1], blue: mix[2], alpha: 1)
+            check(Contrast.ratio(ink, slice) >= 4.5, "\(look): names on the highlighted slice: \(Contrast.format(ink, slice))")
+            check(Contrast.ratio(slice, surface) >= 1.3, "\(look): the highlighted slice against the wheel: \(Contrast.format(slice, surface))")
+        }
+        LookStore.shared.color = .black
+        let black = Palette.wheelSurface.cgColor
+        check((0.015...0.04).contains(Contrast.luminance(black)), "black is a soft black, not pitch black: \(Contrast.components(black))")
+    }
+
+    test("Interface", "Glass takes on the colour, never less than the floor that keeps the ink legible") {
+        let (color, intensity) = (LookStore.shared.color, LookStore.shared.glassIntensity)
+        defer {
+            LookStore.shared.color = color
+            LookStore.shared.glassIntensity = intensity
+        }
+        for look in LookColor.allCases {
+            LookStore.shared.color = look
+            for value in [0, 0.25, 1] {
+                LookStore.shared.glassIntensity = value
+                let tint = Palette.glassTint()
+                // 0.75 is where the ink holds 4.5:1 even over a window of the opposite colour, measured on screen.
+                check(tint.alphaComponent >= 0.75 && abs(tint.alphaComponent - (0.75 + 0.15 * value)) < 0.001, "\(look) at \(value): the tint is \(tint.alphaComponent) opaque")
+                check(tint.whiteComponent == (look == .white ? 1 : 0), "\(look) at \(value): the tint is \(tint)")
+            }
+        }
+        LookStore.shared.glassIntensity = 3
+        check(Settings.glassIntensity == 1, "an intensity past the slider's end is kept at the end")
+        LookStore.shared.color = .black
+        let backdrop = WheelBackdrop.make(frame: NSRect(x: 0, y: 0, width: 200, height: 200), glass: true)
+        check(backdrop.appearance?.name == .darkAqua, "black glass is dark glass")
+        LookStore.shared.color = .white
+        WheelBackdrop.tint(backdrop)
+        check(backdrop.appearance?.name == .aqua, "tinted again, the same glass turns light")
     }
 
     test("Interface", "Wheel: each slice answers in the right place; the centre and outside don’t") {
@@ -53,21 +105,33 @@ func registerUITests() {
         }
     }
 
-    test("Interface", "Wheel: the highlighted slice is drawn white where the pointer finds it") {
+    test("Interface", "Wheel: the highlighted slice takes the selection where the pointer finds it, on black and on white") {
         LookStore.shared.glassWheel = false
-        let view = UIKitchen.wheel(6)
-        let window = UIKitchen.host(view)
-        UIKitchen.key(view, 124)
-        UIKitchen.key(view, 124)
-        try require(view.highlighted == 1, "two right arrows should highlight slice 1")
-        spinRunLoop(0.6)
-        let image = try require(UIKitchen.render(view), "the wheel drew nothing")
-        let radius = view.geometry.inner + 12
-        let inside = UIKitchen.sample(image, view, angle: 1.5 * view.step, radius: radius)
-        let neighbour = UIKitchen.sample(image, view, angle: 2.5 * view.step, radius: radius)
-        check(UIKitchen.close(inside, [255, 255, 255], 26), "slice 1 should be white, it is \(inside)")
-        check(UIKitchen.close(neighbour, [15, 15, 15], 40), "slice 2 should stay black (\(neighbour))")
-        window.close()
+        let color = LookStore.shared.color
+        defer { LookStore.shared.color = color }
+        for (look, selected, surface) in [(LookColor.black, [80.0, 80, 80], [42.0, 42, 42]), (.white, [206, 206, 206], [245, 245, 245])] {
+            LookStore.shared.color = look
+            let view = UIKitchen.wheel(6)
+            let window = UIKitchen.host(view)
+            UIKitchen.key(view, 124)
+            UIKitchen.key(view, 124)
+            try require(view.highlighted == 1, "two right arrows should highlight slice 1")
+            spinRunLoop(0.6)
+            let image = try require(UIKitchen.render(view), "the wheel drew nothing")
+            let radius = view.geometry.inner + 12
+            let inside = UIKitchen.sample(image, view, angle: 1.5 * view.step, radius: radius)
+            let neighbour = UIKitchen.sample(image, view, angle: 2.5 * view.step, radius: radius)
+            check(UIKitchen.close(inside, selected, 8), "\(look): slice 1 should be \(selected), it is \(inside)")
+            check(UIKitchen.close(neighbour, surface, 30), "\(look): slice 2 should keep the wheel's colour (\(neighbour))")
+            // The platter sits inside its slice: a little in from the divider, and short of the rim.
+            let middle = view.geometry.inner + 40
+            let nearDivider = UIKitchen.sample(image, view, angle: view.step + 2.5 / middle, radius: middle)
+            let inDivider = UIKitchen.sample(image, view, angle: view.step + 8 / middle, radius: middle)
+            let pastRim = UIKitchen.sample(image, view, angle: 1.5 * view.step, radius: view.geometry.outer + 8)
+            check(UIKitchen.close(nearDivider, surface, 30) && UIKitchen.close(inDivider, selected, 12), "\(look): the platter should start between 2.5 and 8 pt from the divider (\(nearDivider), \(inDivider))")
+            check(UIKitchen.close(pastRim, surface, 30), "\(look): the platter shouldn’t reach the rim (\(pastRim))")
+            window.close()
+        }
     }
 
     test("Interface", "Wheel: icons share one ring and names sit under them, clear of the lines, at every size") {
@@ -106,7 +170,7 @@ func registerUITests() {
                             let slice = layout.slices[index]
                             let title = "\(label): “\(item.title)”"
                             if let icon = slice.icon {
-                                check(abs(hypot(icon.x, icon.y) - layout.iconRadius) < 0.01, "\(title): the icon is off the ring the others share")
+                                check(abs(hypot(icon.x, icon.y - layout.iconLift) - layout.iconRadius) < 0.01, "\(title): the icon is off the ring the others share")
                                 let box = CGRect(x: icon.x - layout.iconBox.width / 2, y: icon.y - layout.iconBox.height / 2,
                                                  width: layout.iconBox.width, height: layout.iconBox.height)
                                 check(layout.clear(box, index: index), "\(title): the icon touches a divider, the hub or the rim")
@@ -158,7 +222,7 @@ func registerUITests() {
         check(small.slices.contains(where: \.truncated), "ten long names on the smallest wheel should not all fit whole")
         check(small.slices.filter(\.truncated).count > large.slices.filter(\.truncated).count, "a bigger wheel shortens fewer names")
         check(small.fontSize < large.fontSize && small.symbolSize < large.symbolSize, "text and icons follow the size of the wheel")
-        check(Set(small.slices.compactMap { $0.icon.map { (hypot($0.x, $0.y) * 100).rounded() } }).count == 1, "the icons share one ring")
+        check(Set(small.slices.compactMap { $0.icon.map { (hypot($0.x, $0.y - small.iconLift) * 100).rounded() } }).count == 1, "the icons share one ring")
         let iconsOnly = WheelLayout.make(titles: items.map(\.title), symbols: items.map(\.symbol), style: WheelStyle(size: .extraSmall, names: false))
         check(iconsOnly.symbolSize > small.symbolSize, "without names the icons grow")
         check(abs(iconsOnly.iconRadius - (iconsOnly.inner + iconsOnly.outer) / 2) < 0.01, "without names the icons sit mid-ring")
@@ -274,6 +338,35 @@ func registerUITests() {
         UIKitchen.key(view, 53)
         check(cancelled == 1, "at the top, Esc closes the wheel")
         check(elements.first?.accessibilityPerformPress() == false, "an old Back button does nothing once back")
+        window.close()
+    }
+
+    test("Interface", "Wheel: every change is drawn at once, also going back without moving the mouse") {
+        let children = (0..<3).map { WheelItem(title: "Option \($0 + 1)", symbol: "circle") }
+        let items = [WheelItem(title: "Option 1", symbol: "circle"),
+                     WheelItem(id: "group", title: "Group", symbol: "square.stack", children: children)]
+        let view = WheelView(items: items, title: "Tools", subtitle: "", urls: [], clickMode: true)
+        let window = UIKitchen.host(view)
+        let group = UIKitchen.point(view, angle: 1.5 * view.step, radius: (view.geometry.inner + view.geometry.outer) / 2)
+        func openGroup() {
+            UIKitchen.mouse(view, .leftMouseDown, group)
+            UIKitchen.mouse(view, .leftMouseUp, group)
+            spinRunLoop(0.6)
+        }
+
+        openGroup()
+        var drawn = view.drawCount
+        UIKitchen.mouse(view, .leftMouseDown, view.center)
+        UIKitchen.mouse(view, .leftMouseUp, view.center)
+        // Off screen, layer-backed views draw when the run loop turns.
+        spinRunLoop(0.05)
+        check(!view.isInGroup && view.drawCount > drawn, "clicking the centre redraws the wheel it goes back to (\(drawn) → \(view.drawCount) draws)")
+
+        openGroup()
+        drawn = view.drawCount
+        UIKitchen.mouse(view, .mouseMoved, view.center)
+        spinRunLoop(0.05)
+        check(view.hubHighlighted && view.drawCount > drawn, "pointing at the centre of a group lights it up")
         window.close()
     }
 
@@ -502,6 +595,55 @@ func registerUITests() {
         }
     }
 
+    test("Interface", "The logo: six slices apart from each other around an open centre; the menu bar's is a template") {
+        let center = CGPoint(x: 100, y: 100)
+        let step = 2 * CGFloat.pi / CGFloat(Logo.slices)
+        func at(_ angle: CGFloat, _ radius: CGFloat) -> CGPoint { CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle)) }
+        for index in 0..<Logo.slices {
+            let path = Logo.slice(index, center: center, radius: 80)
+            let middle = .pi / 2 - (CGFloat(index) + 0.5) * step
+            let border = .pi / 2 - CGFloat(index) * step
+            check(path.contains(at(middle, 50)), "slice \(index) misses its own middle")
+            check(!path.contains(at(border, 50)) && !path.contains(at(border - step, 50)), "slice \(index) reaches over a gap")
+            check(!path.contains(center) && !path.contains(at(middle, 20)), "slice \(index) closes the centre")
+            check(!path.contains(at(middle, 81)) && path.contains(at(middle, 78)), "slice \(index) doesn’t end at the rim")
+        }
+        let icon = Logo.menuBarImage()
+        check(icon.isTemplate && icon.size == NSSize(width: 18, height: 18), "the menu bar icon should be an 18 pt template")
+    }
+
+    test("Interface", "Editors wear the wheel's dark grey, and glass when it is on") {
+        let (color, intensity) = (LookStore.shared.color, LookStore.shared.glassIntensity)
+        defer {
+            LookStore.shared.glassWheel = false
+            LookStore.shared.color = color
+            LookStore.shared.glassIntensity = intensity
+        }
+        LookStore.shared.glassWheel = false
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let window = LookWindow(content: content, contentRect: content.bounds, styleMask: [.titled, .fullSizeContentView])
+        window.isReleasedWhenClosed = false
+        check(window.isOpaque && window.backgroundColor == Palette.wheelSurface && window.contentView === content, "glass off: the window is dark grey")
+        LookStore.shared.color = .white
+        check(window.backgroundColor == Palette.wheelSurface && window.appearance?.name == .aqua, "white: the open editor turns white at once")
+        LookStore.shared.color = .black
+        check(window.appearance?.name == .darkAqua, "black again: the editor is dark")
+        LookStore.shared.glassWheel = true
+        if Motion.reduceTransparency {
+            check(window.isOpaque, "with Reduce Transparency on, the editor stays dark grey")
+        } else {
+            // Glass any deeper than the content view smears the title bar's buttons and title.
+            let glass = window.contentView
+            check(!window.isOpaque && glass !== content && (content.superview === glass || (glass != nil && content.isDescendant(of: glass!))), "glass on: the glass is the window's content view, and holds the content")
+            check(glass?.frame.size == window.frame.size && content.frame.size == window.frame.size, "the glass covers the whole window, and so does the content")
+            LookStore.shared.glassIntensity = 0.8
+            check(window.contentView === glass, "a new intensity shades the same glass rather than building another")
+        }
+        LookStore.shared.glassWheel = false
+        check(window.isOpaque && window.contentView === content && content.frame.size == window.frame.size, "glass off again: the backdrop goes away")
+        window.close()
+    }
+
     test("Interface", "Snapshots: wheels, HUD, editors, settings and help draw in every language") {
         let folder = Fixtures.root.appendingPathComponent("_captures", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -513,13 +655,16 @@ func registerUITests() {
             try? UIKitchen.png(image, to: folder.appendingPathComponent("\(name).png"))
             made.append(name)
         }
+        let color = LookStore.shared.color
         defer {
             Localizer.shared.language = .en
             LookStore.shared.glassWheel = false
+            LookStore.shared.color = color
         }
         for language in [Language.en, .pt, .fr, .es] {
             Localizer.shared.language = language
-            for glass in [false, true] {
+            for (look, glass) in [(LookColor.black, false), (.black, true), (.white, false), (.white, true)] {
+                LookStore.shared.color = look
                 LookStore.shared.glassWheel = glass
                 let urls = [Fixtures.url("quadrants.jpg")]
                 let view = WheelView(items: UIKitchen.tools(urls), title: WheelKind.tools.title, subtitle: "quadrants.jpg", urls: urls, clickMode: true)
@@ -527,9 +672,10 @@ func registerUITests() {
                 UIKitchen.key(view, 124)
                 UIKitchen.key(view, 124)
                 spinRunLoop(0.5)
-                save("wheel-tools-\(glass ? "glass" : "black")-\(language.rawValue)", UIKitchen.render(view, backdrop: true))
+                save("wheel-tools-\(look)\(glass ? "-glass" : "")-\(language.rawValue)", UIKitchen.render(view, backdrop: true))
                 window.close()
             }
+            LookStore.shared.color = .black
             LookStore.shared.glassWheel = false
             let video = [Fixtures.url("clip.mp4")]
             let busy = WheelView(items: UIKitchen.tools(video), title: WheelKind.tools.title, subtitle: "clip.mp4", urls: video, clickMode: true)
@@ -551,9 +697,11 @@ func registerUITests() {
                 save("wheel-\(size)-\(names ? "names" : "icons")-\(language.rawValue)", UIKitchen.render(wheel, backdrop: true))
                 host.close()
             }
-            save("settings-\(language.rawValue)", UIKitchen.render(AnyView(SettingsView()), size: NSSize(width: 600, height: 600), appearance: .darkAqua))
+            save("settings-\(language.rawValue)", UIKitchen.render(AnyView(SettingsView()), size: SettingsView.size, appearance: .darkAqua))
             SettingsNavigation.shared.tab = .wheels
-            save("settings-wheels-\(language.rawValue)", UIKitchen.render(AnyView(SettingsView()), size: NSSize(width: 600, height: 600), appearance: .darkAqua))
+            save("settings-wheels-\(language.rawValue)", UIKitchen.render(AnyView(SettingsView()), size: SettingsView.size, appearance: .darkAqua))
+            SettingsNavigation.shared.tab = .formats
+            save("settings-formats-\(language.rawValue)", UIKitchen.render(AnyView(SettingsView()), size: SettingsView.size, appearance: .darkAqua))
             SettingsNavigation.shared.tab = .general
             save("help-\(language.rawValue)", UIKitchen.render(AnyView(HelpView(close: {})), size: NSSize(width: 540, height: 520), appearance: .darkAqua))
         }
@@ -601,12 +749,17 @@ func registerUITests() {
                                         settle: name == "editor-video" || name == "editor-audio" ? 1.5 : 0.6))
         }
         SettingsNavigation.shared.tab = .activity
-        save("settings-activity", UIKitchen.render(AnyView(SettingsView()), size: NSSize(width: 600, height: 600), appearance: .darkAqua))
+        save("settings-activity", UIKitchen.render(AnyView(SettingsView()), size: SettingsView.size, appearance: .darkAqua))
+        // Settings in a light window: the wheel's preview stays dark, everything else turns light.
+        for tab in [SettingsTab.general, .wheels, .formats] {
+            SettingsNavigation.shared.tab = tab
+            save("settings-\(tab.rawValue)-light", UIKitchen.render(AnyView(SettingsView()), size: SettingsView.size, appearance: .aqua))
+        }
         SettingsNavigation.shared.tab = .general
         let shelf = ShelfModel()
         shelf.add([photo, Fixtures.url("report.pdf"), Fixtures.url("clip.mp4")])
         save("shelf", UIKitchen.render(ShelfView(model: shelf), size: NSSize(width: 300, height: 360), appearance: .darkAqua))
-        check(made.count >= 37, "only \(made.count) snapshots")
+        check(made.count >= 44, "only \(made.count) snapshots")
     }
 }
 

@@ -111,6 +111,63 @@ func registerWheelTests() {
         check(plain.arrangement(ids: ids, defaultGroups: groups).isDefault, "moved back, it saves nothing again")
     }
 
+    test("Wheels", "Dragging on the preview puts a slice right before the one it was dropped in front of") {
+        let ids = ["a", "b", "c", "d", "e"]
+        let groups = [WheelGroup(id: "g", members: ["c", "d"])]
+        var draft = WheelDraft(WheelArrangement(), ids: ids, defaultGroups: groups)
+        draft.hidden = ["b"]
+        // The wheel shows a, g and e; b is hidden and keeps its place among them.
+        draft.place("e", before: "a")
+        check(draft.entries.map(\.id) == ["e", "a", "b", "g"], "e dropped where a was: \(draft.entries.map(\.id))")
+        draft.place("e", before: nil)
+        check(draft.entries.map(\.id) == ["a", "b", "g", "e"], "dropped on the last slice, it goes last: \(draft.entries.map(\.id))")
+        draft.place("g", before: "a")
+        check(draft.entries.map(\.id) == ["g", "a", "b", "e"] && draft.entry("g")?.members == ["c", "d"], "a group moves as one: \(draft.entries)")
+        draft.place("d", before: "c")
+        check(draft.entry("g")?.members == ["d", "c"] && draft.entries.count == 4, "inside a group, slices stay in it: \(draft.entries)")
+        let before = draft
+        draft.place("a", before: "a")
+        check(draft == before, "dropped on itself, nothing moves")
+        let saved = draft.arrangement(ids: ids, defaultGroups: groups)
+        check(WheelDraft(saved, ids: ids, defaultGroups: groups).entries == draft.entries, "the new order is what is saved")
+    }
+
+    test("Wheels", "The preview finds the slice under the pointer where the wheel does") {
+        for size in WheelSize.allCases {
+            for count in [1, 2, 5, 8, 13] {
+                let items = (0..<count).map { WheelItem(id: "\($0)", title: "Item \($0)", symbol: nil) }
+                let view = WheelView(items: items, title: "", subtitle: "", urls: [], clickMode: true, style: WheelStyle(size: size, names: true))
+                for step in 0..<48 {
+                    let angle = CGFloat(step) * .pi / 24 + 0.01
+                    for radius in [WheelLayout.innerRadius(size) - 10, WheelLayout.innerRadius(size) + 6, WheelLayout.outerRadius(size) - 6] {
+                        let point = NSPoint(x: view.center.x + radius * sin(angle), y: view.center.y + radius * cos(angle))
+                        let offset = CGPoint(x: point.x - view.center.x, y: point.y - view.center.y)
+                        let found = WheelLayout.slice(at: offset, count: count, size: size)
+                        check(found == view.index(at: point), "\(size), \(count) slices, \(step * 360 / 48)°: the preview finds \(String(describing: found)), the wheel \(String(describing: view.index(at: point)))")
+                    }
+                }
+                check(WheelLayout.isOnHub(.zero, size: size) && !WheelLayout.isOnHub(CGPoint(x: 0, y: WheelLayout.outerRadius(size)), size: size), "\(size): the hub")
+            }
+        }
+    }
+
+    test("Wheels", "Every slice and format says what it does; conversions that wait for a program say which") {
+        var scopes: [WheelScope] = [.tools, .actions]
+        scopes += SourceKind.allCases.map { WheelScope.convert($0) }
+        for scope in scopes {
+            for choice in WheelCatalog.choices(for: scope) {
+                check(choice.explanation.count > 20, "\(scope.key) › \(choice.title): no explanation")
+                check(!choice.explanation.contains("for ."), "\(scope.key) › \(choice.title): offered for nothing")
+            }
+        }
+        for format in Format.allCases { check(format.summary.hasSuffix("."), "\(format.label): no summary") }
+        func waits(_ program: String) -> String? { Engines.path(program) == nil ? program : nil }
+        check(Conversions.missingProgram(from: .jpg, to: .png) == nil && Conversions.missingProgram(from: .docx, to: .pdf) == nil, "macOS converts these itself")
+        check(Conversions.missingProgram(from: .mp3, to: .wav) == waits("ffmpeg") && Conversions.missingProgram(from: .gif, to: .mp4) == waits("ffmpeg"), "sound and video wait for ffmpeg")
+        check(Conversions.missingProgram(from: .png, to: .webp) == waits("cwebp") && Conversions.missingProgram(from: .png, to: .jxl) == waits("cjxl"), "WebP and JPEG XL wait for their encoders")
+        check(Conversions.missingProgram(from: .gif, to: .png) == nil && Conversions.missingProgram(from: .srt, to: .vtt) == nil, "a GIF to a picture and subtitles need nothing")
+    }
+
     test("Wheels", "Settings lists every slice a file can show, in the order the wheel uses") {
         for source in SourceKind.allCases {
             let choices = WheelCatalog.choices(for: .convert(source)).map(\.id)
@@ -166,22 +223,24 @@ func registerWheelTests() {
         }
     }
 
-    test("Wheels", "The preview picture pops the chosen slice out in white") {
+    test("Wheels", "The preview picture lights the chosen slice with a light veil inside its slice") {
         LookStore.shared.glassWheel = false
         let items = (0..<6).map { index in WheelItem(id: "\(index)", title: "Item \(index)", symbol: nil) }
         let image = try unwrap(WheelView.picture(items: items, title: "Wheel", subtitle: "", highlighted: 2, style: WheelStyle()), "no picture")
         let rep = try unwrap(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)), "the picture has no pixels")
         let layout = WheelLayout.make(titles: items.map(\.title), symbols: items.map(\.symbol), style: WheelStyle())
         let scale = CGFloat(rep.pixelsWide) / image.size.width
-        func brightness(slice: Int) -> CGFloat {
+        func brightness(slice: Int, radius: CGFloat? = nil) -> CGFloat {
             let angle = (CGFloat(slice) + 0.5) * layout.step
-            let radius = layout.inner + 16
+            let radius = radius ?? layout.inner + 16
             let x = image.size.width / 2 + radius * sin(angle)
             let y = image.size.height / 2 + radius * cos(angle)
             return rep.colorAt(x: Int(x * scale), y: Int((image.size.height - y) * scale))?.usingColorSpace(.deviceRGB)?.brightnessComponent ?? -1
         }
-        check(brightness(slice: 2) > 0.9, "the chosen slice should be white, brightness \(brightness(slice: 2))")
-        check(brightness(slice: 0) < 0.25, "the other slices stay black, brightness \(brightness(slice: 0))")
+        check(brightness(slice: 2) > brightness(slice: 0) + 0.1 && brightness(slice: 2) < 0.6, "the chosen slice should be a soft veil, brightness \(brightness(slice: 2))")
+        check(brightness(slice: 0) < 0.3, "the other slices stay dark, brightness \(brightness(slice: 0))")
+        let pastRim = brightness(slice: 2, radius: layout.outer + 8)
+        check(pastRim < brightness(slice: 2) - 0.1, "the veil stays inside the slice, short of the rim, brightness \(pastRim)")
     }
 }
 

@@ -69,6 +69,11 @@ func registerEditorTests() {
         model.aspect = .original
         check(model.batchSettings.shape == nil, "“Original” keeps each picture’s own shape")
         check(CropAspect.allCases.contains(.r5x4) && CropAspect.r5x4.ratio(original: .zero) == 1.25, "5:4 is offered")
+        check(CropAspect.social.contains(.instagramPortrait) && CropAspect.instagramPortrait.ratio(original: .zero) == 0.8, "Instagram Portrait is 4:5")
+        check(CropAspect.social.allSatisfy { $0.ratio(original: .zero) != nil && !CropAspect.general.contains($0) }, "every social format has a fixed shape, shown apart")
+        model.aspect = .xHeader
+        let header = try CropRenderer.render(wide, model.batchSettings)
+        check(abs(Double(header.width) / Double(header.height) - 3) < 0.05 && header.width <= wide.width, "X Header is 3:1 and never enlarges: \(header.width)×\(header.height)")
     }
 
     test("Background", "Margin, ratio, transparent corners and gradient") {
