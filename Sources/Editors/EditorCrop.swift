@@ -3,8 +3,15 @@ import SwiftUI
 
 enum CropAspect: String, CaseIterable, Identifiable {
     case free, original, square, r4x3, r3x4, r4x5, r5x4, r16x9, r9x16, r3x2, r2x3
+    case instagramPost, instagramPortrait, instagramLandscape, story, youtube, linkPost, xHeader, facebookCover, linkedInBanner
 
     var id: String { rawValue }
+
+    /// The formats of the social networks, shown apart in the picker. Only their shape is kept:
+    /// the networks resize pictures themselves, and enlarging a small one would only soften it.
+    static let social: [CropAspect] = [.instagramPost, .instagramPortrait, .instagramLandscape, .story, .youtube, .linkPost,
+                                       .xHeader, .facebookCover, .linkedInBanner]
+    static let general = allCases.filter { !social.contains($0) }
 
     var title: String {
         switch self {
@@ -19,6 +26,15 @@ enum CropAspect: String, CaseIterable, Identifiable {
         case .r9x16: return "9:16"
         case .r3x2: return "3:2"
         case .r2x3: return "2:3"
+        case .instagramPost: return "\(L("Instagram Post")) 1:1"
+        case .instagramPortrait: return "\(L("Instagram Portrait")) 4:5"
+        case .instagramLandscape: return "\(L("Instagram Landscape")) 1.91:1"
+        case .story: return "\(L("Story, Reel or TikTok")) 9:16"
+        case .youtube: return "YouTube 16:9"
+        case .linkPost: return "\(L("Link Post (Facebook, LinkedIn)")) 1.91:1"
+        case .xHeader: return "\(L("X Header")) 3:1"
+        case .facebookCover: return "\(L("Facebook Cover")) 2.7:1"
+        case .linkedInBanner: return "\(L("LinkedIn Banner")) 4:1"
         }
     }
 
@@ -36,6 +52,14 @@ enum CropAspect: String, CaseIterable, Identifiable {
         case .r9x16: return 9.0 / 16
         case .r3x2: return 3.0 / 2
         case .r2x3: return 2.0 / 3
+        case .instagramPost: return 1
+        case .instagramPortrait: return 4.0 / 5
+        case .instagramLandscape, .linkPost: return 1.91
+        case .story: return 9.0 / 16
+        case .youtube: return 16.0 / 9
+        case .xHeader: return 3
+        case .facebookCover: return 851.0 / 315
+        case .linkedInBanner: return 4
         }
     }
 }
@@ -320,7 +344,10 @@ struct CropScreen: View {
         } inspector: {
             Section(L("Aspect Ratio")) {
                 Picker(L("Format"), selection: $model.aspect) {
-                    ForEach(CropAspect.allCases) { Text($0.title).tag($0) }
+                    ForEach(CropAspect.general) { Text($0.title).tag($0) }
+                    Section(L("Social Media")) {
+                        ForEach(CropAspect.social) { Text($0.title).tag($0) }
+                    }
                 }
             }
             Section(L("Rotate and Flip")) {
